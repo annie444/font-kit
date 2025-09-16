@@ -16,7 +16,7 @@
 	>
 		<div class="flex">
 			<CopyrightIcon size={16} class="content-center self-center" />&ensp;<span>{year}</span
-			>&ensp;FontKit Tester
+			>&ensp;Font Feature Tester
 		</div>
 		<div class="flex items-center">
 			<span>v1</span>

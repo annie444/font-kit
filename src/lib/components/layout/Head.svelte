@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { SITE_URL } from '$lib/consts';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { SvelteURL } from 'svelte/reactivity';
 	import { asset } from '$app/paths';
 
-	let canonicalUrl = $state('https://font-feature.com');
+	let canonicalUrl = $state(SITE_URL);
 
 	onMount(() => {
 		if (browser) {

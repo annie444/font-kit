@@ -3,8 +3,8 @@ import { superValidate, fail, message } from 'sveltekit-superforms';
 import { formSchema } from '$lib/forms/font';
 import { zod } from 'sveltekit-superforms/adapters';
 import * as fontkit from 'fontkit';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { CDN_URL } from '$lib/consts';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
 	S3_ACCESS_KEY_ID,
 	S3_SECRET_ACCESS_KEY,
@@ -21,6 +21,7 @@ export const load: PageServerLoad = async () => {
 
 export const actions: Actions = {
 	default: async (event) => {
+		// Validate the form
 		const form = await superValidate(event, zod(formSchema));
 		if (!form.valid) {
 			return fail(400, {
@@ -28,7 +29,7 @@ export const actions: Actions = {
 			});
 		}
 
-		// Parse font file
+		// Parse font file for the family name
 		let font = fontkit.create(Buffer.from(await form.data.font.arrayBuffer()));
 		let fontName: string = 'Unknown';
 		if ('familyName' in font) {
@@ -57,7 +58,11 @@ export const actions: Actions = {
 				secretAccessKey: S3_SECRET_ACCESS_KEY
 			}
 		});
+
+		// Use original file name
 		const fileName = form.data.font.name;
+
+		// Determine font format
 		let format = 'unknown';
 		if (fileName.endsWith('.ttf') || fileName.endsWith('.otf')) {
 			format = 'truetype';
@@ -66,6 +71,8 @@ export const actions: Actions = {
 		} else if (fileName.endsWith('.woff2')) {
 			format = 'woff2';
 		}
+
+		// Create S3 put command
 		const command = new PutObjectCommand({
 			ACL: 'public-read',
 			Expires: new Date(Date.now() + 3600 * 1000), // 1 hour from now
@@ -74,29 +81,20 @@ export const actions: Actions = {
 			Body: await form.data.font.bytes(),
 			ContentType: form.data.font.type
 		});
+
+		// Upload the file
 		try {
-			const res = await S3.send(command);
-			console.log('File uploaded successfully. ETag:', res);
+			await S3.send(command);
 		} catch (error) {
 			console.error('Error uploading file:', error);
 			return fail(500, { form, message: 'Error uploading file' });
 		}
 
-		// Generate a presigned URL valid for 1 hour
-		const url = await getSignedUrl(
-			S3,
-			new GetObjectCommand({
-				Bucket: S3_BUCKET_NAME,
-				Key: fileName
-			}),
-			{ expiresIn: 3600 }
-		);
-
 		// Return success message with font name and URL
 		return message(form, {
 			type: 'success',
 			text: 'File uploaded successfully!',
-			url: url,
+			url: `${CDN_URL}/${fileName}`,
 			name: fontName,
 			fileName: fileName,
 			features: font.availableFeatures,
