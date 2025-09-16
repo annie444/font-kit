@@ -98,6 +98,7 @@ export const actions: Actions = {
 			text: 'File uploaded successfully!',
 			url: url,
 			name: fontName,
+			fileName: fileName,
 			features: font.availableFeatures,
 			format: format
 		});

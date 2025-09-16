@@ -1,22 +1,26 @@
 <script lang="ts">
-	import FontForm from '$lib/components/forms/font.svelte';
-	import type { PageData } from './$types.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { FontForm, type Font } from '$lib/components/forms';
+	import type { PageData } from './$types.js';
+	import { fly } from 'svelte/transition';
+	import { quadInOut } from 'svelte/easing';
 
 	let { data }: { data: PageData } = $props();
-	let font = $state<{ url: string; font: string; features: string[]; format: string } | null>(null);
+	let font = $state<Font>(null);
 
 	let testText = $state(`abcdefghijklmnopqrstuvwxyz
 ABCDEFGHIJKLMNOPQRSTUVWXYZ
-0123456789
+0123456789 1/2 1/4 3/4
 !@#$%^&*()-_=+[]{}|;:'",.<>?/
 <- -> ~> <~ == != >= <= === => 
 <=> <-> <~> <==> <--> <~~>
 1a 2b 3c 4d 5e 6f 7g 8h 9i 0j
-The quick brown fox jumps over the lazy dog.`);
+The quick brown fox jumps over the lazy dog.
+f(x) = x^2 + 2x - 3
+y = mx + b`);
 
 	let demoArea = $state<HTMLPreElement | null>(null);
 
@@ -49,6 +53,8 @@ The quick brown fox jumps over the lazy dog.`);
 		}, {})
 	);
 
+	let rows = $derived(Math.ceil(features ? Object.keys(features).length / 3 : 0) + 2);
+
 	$effect(() => {
 		if (font && demoArea && features && Object.keys(features).length > 0) {
 			demoArea.style.fontFeatureSettings = Object.entries(features)
@@ -78,14 +84,23 @@ The quick brown fox jumps over the lazy dog.`);
 
 <div>
 	<FontForm {data} bind:font />
-	{#if font}
-		<div class="my-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+	{#if font && features}
+		<div
+			class="my-4 grid grid-cols-1 gap-4 md:grid-cols-3"
+			transition:fly={{
+				delay: 0,
+				duration: 300,
+				easing: quadInOut,
+				y: 20,
+				opacity: 0
+			}}
+		>
 			<Card.Root class="md:col-span-2">
 				<Card.Header>
 					<Card.Title>Sample Text</Card.Title>
 				</Card.Header>
 				<Card.Content>
-					<Textarea bind:value={testText} class="w-full" />
+					<Textarea bind:value={testText} class="h-full w-full" {rows} />
 				</Card.Content>
 			</Card.Root>
 			<Card.Root>
@@ -93,11 +108,11 @@ The quick brown fox jumps over the lazy dog.`);
 					<Card.Title>Font Features</Card.Title>
 				</Card.Header>
 				<Card.Content>
-					<div class="grid grid-cols-2 gap-2 lg:grid-cols-3">
+					<div class="grid grid-cols-3 gap-2">
 						{#each font.features as feature (feature)}
 							<div class="flex flex-row items-center">
 								<Switch id={feature} onclick={toggleFeature} />
-								<Label for={feature} class="cursor-pointer select-none">{feature}</Label>
+								<Label for={feature} class="m-0.5 cursor-pointer select-none">{feature}</Label>
 							</div>
 						{/each}
 					</div>
@@ -110,7 +125,10 @@ The quick brown fox jumps over the lazy dog.`);
 				<Card.Description>Font: <strong>{font.font}</strong></Card.Description>
 			</Card.Header>
 			<Card.Content>
-				<pre bind:this={demoArea} style="font-family: '{font.font}' !important;">{testText}</pre>
+				<pre
+					bind:this={demoArea}
+					style="font-family: '{font.font}' !important;"
+					class="whitespace-pre-wrap">{testText}</pre>
 			</Card.Content>
 		</Card.Root>
 	{/if}
