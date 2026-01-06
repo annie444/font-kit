@@ -1,135 +1,80 @@
 <script lang="ts">
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
 	import { FontForm, type Font } from '$lib/components/forms';
+	import FontPreview from '$lib/components/font-preview.svelte';
+	import { fontStore } from '$lib/stores/font-store';
 	import type { PageData } from './$types.js';
-	import { fly } from 'svelte/transition';
-	import { quadInOut } from 'svelte/easing';
 
 	let { data }: { data: PageData } = $props();
 	let font = $state<Font>(null);
+	let toastId = $state<string | number | undefined>(undefined);
+	let isRestored = $state(false);
 
-	let testText = $state(`abcdefghijklmnopqrstuvwxyz
-ABCDEFGHIJKLMNOPQRSTUVWXYZ
-0123456789 1/2 1/4 3/4
-!@#$%^&*()-_=+[]{}|;:'",.<>?/
-<- -> ~> <~ == != >= <= === => 
-<=> <-> <~> <==> <--> <~~>
-1a 2b 3c 4d 5e 6f 7g 8h 9i 0j
-The quick brown fox jumps over the lazy dog.
-f(x) = x^2 + 2x - 3
-y = mx + b`);
-
-	let demoArea = $state<HTMLPreElement | null>(null);
-
+	// Initialize from store on mount
 	$effect(() => {
-		if (font) {
-			const existingStyle = document.getElementById('custom-font-style');
-			if (existingStyle) {
-				existingStyle.remove();
+		const unsubscribe = fontStore.subscribe((storedFont) => {
+			if (!isRestored && storedFont) {
+				font = storedFont;
+				isRestored = true;
 			}
-			const style = document.createElement('style');
-			style.id = 'custom-font-style';
-			style.innerHTML = `
-			@font-face {
-				font-family: '${font.font}';
-				src: url('${font.url}') format('${font.format}');
-			}`;
-			document.head.appendChild(style);
-		} else {
-			const existingStyle = document.getElementById('custom-font-style');
-			if (existingStyle) {
-				existingStyle.remove();
-			}
-		}
+		});
+		return unsubscribe;
 	});
 
-	let features = $derived<Record<string, number>>(
-		(font?.features ?? []).reduce((acc, feature) => {
-			Object.assign(acc, { [`${feature}`]: 0 });
-			return acc;
-		}, {})
-	);
-
-	let rows = $derived(Math.ceil(features ? Object.keys(features).length / 3 : 0) + 2);
-
+	// Persist font changes to store
 	$effect(() => {
-		if (font && demoArea && features && Object.keys(features).length > 0) {
-			demoArea.style.fontFeatureSettings = Object.entries(features)
-				.map(([key, value]) => `"${key}" ${value === 1 ? 'on' : 'off'}`)
-				.join(', ');
+		if (isRestored) {
+			// Sync any changes (including clearing) to the store
+			fontStore.set(font);
+		} else if (font) {
+			// New upload - save it
+			fontStore.set(font);
+			isRestored = true;
 		}
 	});
-
-	function toggleFeature(e: Event & { currentTarget: EventTarget & HTMLButtonElement }) {
-		if (!font || !demoArea) return;
-		const feature = e.currentTarget.id;
-		const newState = e.currentTarget.dataset.state !== 'checked';
-		const isActive = features[feature] === 1;
-		console.log({ feature, newState, isActive });
-		if (newState && !isActive) {
-			features[feature] = 1;
-		} else if (!newState && isActive) {
-			features[feature] = 0;
-		}
-		const update = Object.entries(features)
-			.map(([key, value]) => `"${key}" ${value === 1 ? 'on' : 'off'}`)
-			.join(', ');
-		console.log(update);
-		demoArea.style.fontFeatureSettings = update;
-	}
 </script>
 
 <div>
-	<FontForm {data} bind:font />
-	{#if font && features}
-		<div
-			class="my-4 grid grid-cols-1 gap-4 md:grid-cols-3"
-			transition:fly={{
-				delay: 0,
-				duration: 300,
-				easing: quadInOut,
-				y: 20,
-				opacity: 0
-			}}
-		>
-			<Card.Root class="md:col-span-2">
-				<Card.Header>
-					<Card.Title>Sample Text</Card.Title>
-				</Card.Header>
-				<Card.Content>
-					<Textarea bind:value={testText} class="h-full w-full" {rows} />
-				</Card.Content>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Font Features</Card.Title>
-				</Card.Header>
-				<Card.Content>
-					<div class="grid grid-cols-3 gap-2">
-						{#each font.features as feature (feature)}
-							<div class="flex flex-row items-center">
-								<Switch id={feature} onclick={toggleFeature} />
-								<Label for={feature} class="m-0.5 cursor-pointer select-none">{feature}</Label>
-							</div>
-						{/each}
-					</div>
-				</Card.Content>
-			</Card.Root>
+	<!-- Hero Section -->
+	<section class="mb-8">
+		<h2 class="text-3xl font-bold tracking-tight sm:text-4xl">
+			Test Your Font's OpenType Features
+		</h2>
+		<p class="mt-3 max-w-2xl text-lg text-muted-foreground">
+			Upload any font file to explore its OpenType features like ligatures, stylistic alternates,
+			and more. Toggle features on and off to see how they affect your text in real-time.
+		</p>
+		<div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+			<div class="flex items-center gap-2">
+				<span
+					class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-base font-medium text-primary"
+					>1</span
+				>
+				<span>Upload a font file</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<span
+					class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-base font-medium text-primary"
+					>2</span
+				>
+				<span>Toggle OpenType features</span>
+			</div>
+			<div class="flex items-center gap-2">
+				<span
+					class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-base font-medium text-primary"
+					>3</span
+				>
+				<span>Preview the results</span>
+			</div>
 		</div>
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>Preview</Card.Title>
-				<Card.Description>Font: <strong>{font.font}</strong></Card.Description>
-			</Card.Header>
-			<Card.Content>
-				<pre
-					bind:this={demoArea}
-					style="font-family: '{font.font}' !important;"
-					class="whitespace-pre-wrap">{testText}</pre>
-			</Card.Content>
-		</Card.Root>
-	{/if}
+		<p class="mt-3 max-w-2xl text-sm text-muted-foreground">
+			Supported formats: TTF, OTF, WOFF, WOFF2.
+		</p>
+		<p class="mt-1 max-w-2xl text-xs text-muted-foreground">
+			The fonts are uploaded to Cloudflare R2 for processing and are deleted after 24 hours. No data
+			is stored permanently; no information about the font or you - the user.
+		</p>
+	</section>
+
+	<FontForm {data} bind:font bind:toastId />
+	<FontPreview {font} {toastId} />
 </div>

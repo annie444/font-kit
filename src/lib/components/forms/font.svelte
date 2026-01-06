@@ -1,30 +1,87 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Form from '$lib/components/ui/form/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Progress } from '$lib/components/ui/progress/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { superForm, fileProxy } from 'sveltekit-superforms';
 	import { fly } from 'svelte/transition';
 	import { quadInOut } from 'svelte/easing';
+	import { toast } from 'svelte-sonner';
 	import type { FontFormProps, FontFormSubmit } from '$lib/components/forms';
+	import { uploadStatus } from '$lib/stores/upload-status';
+	import { estimateR2UploadDuration, createProgressAnimator } from '$lib/utils/upload-progress';
 
-	let { data, font = $bindable(), ...restProps }: FontFormProps = $props();
+	let {
+		data,
+		font = $bindable(),
+		toastId = $bindable<string | number | undefined>(undefined),
+		...restProps
+	}: FontFormProps = $props();
 
-	let progress = $state(0);
+	let isUploading = $state(false);
+	let progressAnimator: ReturnType<typeof createProgressAnimator> | null = null;
 
 	function fileUploadWithProgress(input: FontFormSubmit) {
+		const fileData = input.formData.get('font') as File | null;
+		const fileSize = fileData?.size ?? 0;
+
+		// Cancel any existing animation
+		if (progressAnimator) {
+			progressAnimator.cancel();
+			progressAnimator = null;
+		}
+
+		// Stage 1: Uploading to server
+		isUploading = true;
+		uploadStatus.startUpload(fileSize);
+		toastId = toast.loading('Uploading font...', {
+			description: '0%'
+		});
+
 		return new Promise<XMLHttpRequest>((resolve) => {
 			const xhr = new XMLHttpRequest();
 
 			xhr.upload.onprogress = function (event) {
-				progress = Math.round((100 * event.loaded) / event.total);
+				const progress = Math.round((100 * event.loaded) / event.total);
+				uploadStatus.updateUploadProgress(progress);
+				toast.loading('Uploading font...', {
+					id: toastId,
+					description: `${progress}%`
+				});
 			};
 
 			xhr.onload = function () {
 				if (xhr.readyState === xhr.DONE) {
-					progress = 0;
+					// Stage 2: Processing (brief, server parsing)
+					uploadStatus.startProcessing();
+					toast.loading('Processing font...', {
+						id: toastId,
+						description: 'Analyzing font features'
+					});
+
+					// Stage 3: Estimated R2 upload progress
+					const estimatedDuration = estimateR2UploadDuration(fileSize);
+					uploadStatus.startSaving(fileSize);
+
+					progressAnimator = createProgressAnimator(estimatedDuration, 95, (progress) => {
+						uploadStatus.updateSavingProgress(progress);
+						toast.loading('Saving to cloud...', {
+							id: toastId,
+							description: `${progress}%`
+						});
+					});
+					progressAnimator.start();
+
 					resolve(xhr);
 				}
+			};
+
+			xhr.onerror = function () {
+				isUploading = false;
+				uploadStatus.error('Network error');
+				toast.error('Upload failed', {
+					id: toastId,
+					description: 'Please check your connection and try again'
+				});
 			};
 
 			xhr.open('POST', input.action, true);
@@ -32,26 +89,74 @@
 		});
 	}
 
-	const form = superForm(data.form, {
-		onSubmit: ({ customRequest }) => {
-			customRequest(fileUploadWithProgress);
-		},
-		onResult({ result }) {
-			if (result.type === 'success' && result.data) {
-				font = {
-					url: result.data.form.message.url,
-					font: result.data.form.message.name,
-					features: result.data.form.message.features,
-					format: result.data.form.message.format,
-					fileName: result.data.form.message.fileName
-				};
+	let form = $derived(
+		superForm(data.form, {
+			invalidateAll: false, // Prevent page reload after submission
+			onSubmit: ({ customRequest }) => {
+				customRequest(fileUploadWithProgress);
+			},
+			onResult({ result }) {
+				// Complete the progress animation
+				if (progressAnimator) {
+					progressAnimator.complete();
+					progressAnimator = null;
+				}
+
+				isUploading = false;
+
+				if (result.type === 'success' && result.data) {
+					// Stage 4: Loading font preview (handled by FontPreview component)
+					uploadStatus.startLoadingFont();
+					toast.loading('Loading font preview...', {
+						id: toastId,
+						description: 'Downloading from CDN'
+					});
+
+					font = {
+						url: result.data.form.message.url,
+						font: result.data.form.message.name,
+						features: result.data.form.message.features,
+						format: result.data.form.message.format,
+						fileName: result.data.form.message.fileName
+					};
+				} else if (result.type === 'failure') {
+					const errorMessage = result.data?.form?.message ?? 'Upload failed';
+					uploadStatus.error(errorMessage);
+					toast.error('Upload failed', {
+						id: toastId,
+						description: errorMessage
+					});
+				}
+			},
+			onError({ result }) {
+				if (progressAnimator) {
+					progressAnimator.cancel();
+					progressAnimator = null;
+				}
+				isUploading = false;
+				const errorMessage =
+					result.error instanceof Error ? result.error.message : 'An error occurred';
+				uploadStatus.error(errorMessage);
+				toast.error('Upload failed', {
+					id: toastId,
+					description: errorMessage
+				});
 			}
-		}
+		})
+	);
+
+	const { form: formData, enhance } = $derived(form);
+
+	const file = $derived(fileProxy(formData, 'font'));
+
+	// Cleanup on unmount
+	$effect(() => {
+		return () => {
+			if (progressAnimator) {
+				progressAnimator.cancel();
+			}
+		};
 	});
-
-	const { form: formData, enhance } = form;
-
-	const file = fileProxy(formData, 'font');
 </script>
 
 <div {...restProps}>
@@ -76,10 +181,11 @@
 			<Form.Description>Click above to choose the file</Form.Description>
 			<Form.FieldErrors />
 		</Form.Field>
-		{#if progress > 0}
-			<Form.Button class="mt-0 lg:mt-10" disabled>Upload</Form.Button>
-		{:else}
-			<Form.Button class="mt-0 lg:mt-10">Upload</Form.Button>
+		<Form.Button class="mt-0 lg:mt-10" disabled={isUploading}>
+			{isUploading ? 'Uploading...' : 'Upload'}
+		</Form.Button>
+		{#if font}
+			<Button type="button" class="mt-0 lg:mt-10" onclick={() => (font = null)}>Clear</Button>
 		{/if}
 		{#if font}
 			<div
@@ -101,18 +207,4 @@
 			</div>
 		{/if}
 	</form>
-	{#if progress > 0}
-		<div
-			class="my-4 flex w-full flex-row items-center gap-4 lg:mt-0"
-			transition:fly={{
-				delay: 0,
-				duration: 300,
-				easing: quadInOut,
-				y: 20,
-				opacity: 0
-			}}
-		>
-			<Progress value={progress} />
-		</div>
-	{/if}
 </div>

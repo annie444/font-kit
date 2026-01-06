@@ -1,7 +1,9 @@
 import type { PageServerLoad, Actions } from './$types.js';
 import { superValidate, fail, message } from 'sveltekit-superforms';
 import { formSchema } from '$lib/forms/font';
-import { zod } from 'sveltekit-superforms/adapters';
+import type { FontFeature } from '$lib/components/forms/index.js';
+import { getFeatureInfo } from '$lib/utils/feature-info.js';
+import { zod4 } from 'sveltekit-superforms/adapters';
 import * as fontkit from 'fontkit';
 import { CDN_URL } from '$lib/consts';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -15,14 +17,14 @@ import {
 
 export const load: PageServerLoad = async () => {
 	return {
-		form: await superValidate(zod(formSchema))
+		form: await superValidate(zod4(formSchema))
 	};
 };
 
 export const actions: Actions = {
 	default: async (event) => {
 		// Validate the form
-		const form = await superValidate(event, zod(formSchema));
+		const form = await superValidate(event, zod4(formSchema));
 		if (!form.valid) {
 			return fail(400, {
 				form
@@ -90,6 +92,11 @@ export const actions: Actions = {
 			return fail(500, { form, message: 'Error uploading file' });
 		}
 
+		const features: FontFeature[] = [];
+		for (const feature of font.availableFeatures) {
+			features.push({ name: feature, info: getFeatureInfo(feature) });
+		}
+
 		// Return success message with font name and URL
 		return message(form, {
 			type: 'success',
@@ -97,7 +104,7 @@ export const actions: Actions = {
 			url: `${CDN_URL}/${fileName}`,
 			name: fontName,
 			fileName: fileName,
-			features: font.availableFeatures,
+			features: features,
 			format: format
 		});
 	}
