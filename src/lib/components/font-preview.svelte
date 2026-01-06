@@ -44,7 +44,7 @@ magna aliqua.
 	let features = $derived<Record<string, number>>(
 		(font?.features ?? []).reduce(
 			(acc, feature) => {
-				Object.assign(acc, { [`${feature}`]: 0 });
+				Object.assign(acc, { [`${feature.name}`]: 0 });
 				return acc;
 			},
 			{} as Record<string, number>
